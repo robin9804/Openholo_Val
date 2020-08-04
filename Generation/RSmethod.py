@@ -1,13 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import plyfile
+import multiprocessing
 
 # parameters
 mm = 1e-3
 um = 1e-6
 nm = 1e-9
 
+
 class Propagation:
+    """
+    Propagation simulation using multi-core processing
+    """
     def __init__(self, z, plypath, angle=0, pp=3.6 * um, scaleXY=0.03, scaleZ=0.25, w=3840, h=2160):
         self.z = z
         self.pp = pp
@@ -23,11 +28,14 @@ class Propagation:
         self.wvl_R = 638 * nm
         self.wvl_G = 520 * nm
         self.wvl_B = 450 * nm
+        # parameter for multi core processing
+        self.num_cpu = multiprocessing.cpu_count()
+        self.num_point = [i for i in range(len(self.plydata))]
 
     def k(self, wvl):
         return (np.pi *2) / wvl
 
-    def h_RS_re(self, x1, y1, z1, x2, y2, z2, wvl):
+    def h_RS(self, x1, y1, z1, x2, y2, z2, wvl):
         """
         impulse response function of RS propagation method
         """
@@ -44,34 +52,60 @@ class Propagation:
         t = (t / np.sqrt(1 - t**2)) * z
         return np.abs(t)
 
-    def RS_phase(self, wvl):
+    def Conv_RS(self, n, wvl):
         """
-        return phase encoded fringe pattern
+        convolution method with 1 point
         """
-        ch = np.zeros((self.height, self.width), dtype='complex64')
+        ch = np.zeros((self.height, self.width), dtype='complex128')
         if wvl == self.wvl_G:
             color = 'green'
         elif wvl == self.wvl_B:
             color = 'blue'
         else:
             color = 'red'
-        for n in range(len(self.plydata)):
-            x0 = self.plydata['x'][n] * self.scaleXY
-            y0 = self.plydata['y'][n] * self.scaleXY
-            z0 = self.plydata['z'][n] * self.scaleZ
-            amp = self.plydata[color][n] * (1/wvl)
-            cmap = np.zeros((self.height, self.width), dtype='complex64')
-            for i in range(self.height):
-                for j in range(self.width):
-                    x = (j - self.width / 2) * self.pp
-                    y = (i - self.height / 2) * self.pp
-                    c1, c2 = self.h_RS_re(x0, y0, z0, x, y, self.z, wvl)
-                    c1 = c1 * amp
-                    c2 = c2 * amp
-                    cmap[i, j] = c1 + 1j * c2
-            ch += cmap
-            print(color, ' ', n, 'th point done')
+        x0 = self.plydata['x'][n] * self.scaleXY
+        y0 = self.plydata['y'][n] * self.scaleXY
+        z0 = self.plydata['z'][n] * self.scaleZ
+        amp = self.plydata[color][n] * (1 / wvl)
+        for i in range(self.height):
+            for j in range(self.width):
+                x = (j - self.width / 2) * self.pp
+                y = (i - self.height / 2) * self.pp
+                c1, c2 = self.h_RS(x0, y0, z0, x, y, self.z, wvl)
+                c1 = c1 * amp
+                c2 = c2 * amp
+                ch[i, j] = c1 + 1j * c2
+        print(n, " th point ", color, " done")
         return ch
+
+    def Conv_R(self,n):
+        return self.Conv_RS(n, self.wvl_R)
+
+    def Conv_G(self,n):
+        return self.Conv_RS(n, self.wvl_G)
+
+    def Conv_B(self,n):
+        return self.Conv_RS(n, self.wvl_B)
+
+    def multicore(self, wvl):
+        """
+        using multicore processing
+        """
+        if wvl == self.wvl_G:
+            func = self.Conv_G
+        elif wvl == self.wvl_B:
+            func = self.Conv_B
+        else:
+            func = self.Conv_R
+        print(self.num_cpu, " core Ready")
+        result = np.zeros((self.height, self.width), dtype='complex128')
+        pool = multiprocessing.Pool(processes=self.num_cpu)
+        summ = pool.map(func, self.num_point)
+        pool.close()
+        pool.join()
+        for i in range(len(self.num_point)):
+            result += summ[i]
+        return result
 
     def normalize(self, arr, type='phase'):
         if type == 'phase':
@@ -88,9 +122,9 @@ class Propagation:
 
     def colorimg(self, fname, type='phase'):
         """make color image"""
-        R = self.RS_phase(self.wvl_R)
-        G = self.RS_phase(self.wvl_G)
-        B = self.RS_phase(self.wvl_B)
+        R = self.multicore(self.wvl_R)
+        G = self.multicore(self.wvl_G)
+        B = self.multicore(self.wvl_B)
         img = np.zeros((self.height, self.width, 3))
         img[:, :, 0] = self.normalize(R, type)
         img[:, :, 1] = self.normalize(G, type)
@@ -98,11 +132,12 @@ class Propagation:
         plt.imsave(fname, img)
         return img
 
+
 if __name__ == '__main__':
-    p = Propagation(1, 'point_3.ply', pp=4.6 * um, w= 1920, h = 1080)
+    p = Propagation(1, 'point_3.ply', angle=5, pp=4.6 * um, w=1920, h=1080)
     print(p.plydata.shape)
     print(p.plydata['x'][2])
 
-    ch = p.colorimg('3point.bmp')
+    ch = p.colorimg('3p_2.bmp')
     plt.imshow(ch)
     plt.show()
