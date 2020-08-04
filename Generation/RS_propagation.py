@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plyfile
 import multiprocessing
-
+from multiprocessing import Process, Queue
 # parameters
 mm = 1e-3
 um = 1e-6
@@ -31,7 +31,7 @@ class Propagation:
         self.wvl_G = 520 * nm
         self.wvl_B = 450 * nm
         # parameter for multi core processing
-        self.num_cpu = multiprocessing.cpu_count()
+        self.num_cpu = 16 # multiprocessing.cpu_count()
         self.num_point = [i for i in range(len(self.plydata))]
 
     def k(self, wvl):
@@ -98,12 +98,14 @@ class Propagation:
             func = self.Conv_R
         print(self.num_cpu, " core Ready")
         result = np.zeros((self.height, self.width), dtype='complex128')
-        pool = multiprocessing.Pool(processes=self.num_cpu)
-        summ = pool.map(func, self.num_point)
-        pool.close()
-        pool.join()
-        for i in range(len(self.num_point)):
-            result += summ[i]
+        s = np.split(self.num_point, [i*self.num_cpu for i in range(1, len(self.plydata) // self.num_cpu)])
+        for n in s:
+            pool = multiprocessing.Pool(processes=self.num_cpu)
+            summ = pool.map(func, list(n))
+            for i in range(len(summ)):
+                result += summ[i]
+            pool.close()
+            pool.join()
         return result
 
     def normalize(self, arr, type='phase'):
@@ -138,17 +140,18 @@ class Propagation:
         img = self.multicore(wvl)
         phaseimg = self.normalize(img, 'phase')
         f_phase = 'IM' + fname
-        plt.imsave(f_phase, phaseimg)
+        plt.imsave(f_phase, phaseimg, cmap='gray')
         realimg = self.normalize(img, 'real')
         f_real = 'RE' + fname
-        plt.imsave(f_real, realimg)
+        plt.imsave(f_real, realimg, cmap='gray')
+        return phaseimg, realimg
 
 if __name__ == '__main__':
-    p = Propagation(1, 'PointCloud_Dice_RGB.ply', angleY=22.5)
+    p = Propagation(1, 'PointCloud_Dice_RGB.ply')
     print(p.plydata.shape)
 
-    ch = p.colorimg('3p_6.bmp')
-    plt.imshow(ch)
+    #ch = p.colorimg('3p_6.bmp')
+    ch1, ch2 = p.singlechannel('dice_py_green.bmp', p.wvl_G)
+    plt.imshow(ch1)
     plt.show()
-    p.singlechannel('dice_py.bmp', p.wvl_G)
     print("done")
