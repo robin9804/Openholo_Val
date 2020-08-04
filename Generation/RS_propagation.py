@@ -13,15 +13,17 @@ class Propagation:
     """
     Propagation simulation using multi-core processing
     """
-    def __init__(self, z, plypath, angle=0, pp=3.6 * um, scaleXY=0.03, scaleZ=0.25, w=3840, h=2160):
+    def __init__(self, z, plypath, angleX=0, angleY=0, pp=3.6 * um, scaleXY=0.03, scaleZ=0.25, w=3840, h=2160):
         self.z = z
         self.pp = pp
         self.scaleXY = scaleXY
         self.scaleZ = scaleZ
         self.width = w
         self.height = h
-        self.angle = angle
-        self.theta = self.angle * (np.pi / 180)
+        self.angleX = angleX
+        self.angleY = angleY
+        self.thetaX = self.angleX * (np.pi / 180)
+        self.thetaY = self.angleY * (np.pi / 180)
         with open(plypath, 'rb') as f:
             self.plydata = plyfile.PlyData.read(f)
             self.plydata = np.array(self.plydata.elements[1].data)
@@ -40,17 +42,14 @@ class Propagation:
         impulse response function of RS propagation method
         """
         r = np.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1 - z2)**2)
-        h_r = np.cos(self.k(wvl) * (r + x1 * np.sin(self.theta) + y1 * np.sin(self.theta)))
-        h_i = np.sin(self.k(wvl) * (r + x1 * np.sin(self.theta) + y1 * np.sin(self.theta)))
-        return h_r / r, h_i / r
+        t = (wvl * r) / (2 * self.pp)
 
-    def anti(self, wvl, z):
-        """
-        anti aliasing condition
-        """
-        t = wvl / (2 * self.pp)
-        t = (t / np.sqrt(1 - t**2)) * z
-        return np.abs(t)
+        if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):  # anti aliasing condition
+            h_r = np.sin(self.k(wvl) * (r + x2 * np.sin(self.thetaX) + y2 * np.sin(self.thetaY)))
+            h_i = np.cos(self.k(wvl) * (r + x2 * np.sin(self.thetaX) + y2 * np.sin(self.thetaY)))
+        else:
+            h_r, h_i = 0
+        return h_r / r**2, h_i / r**2
 
     def Conv_RS(self, n, wvl):
         """
@@ -66,7 +65,7 @@ class Propagation:
         x0 = self.plydata['x'][n] * self.scaleXY
         y0 = self.plydata['y'][n] * self.scaleXY
         z0 = self.plydata['z'][n] * self.scaleZ
-        amp = self.plydata[color][n] * (1 / wvl)
+        amp = self.plydata[color][n] * (self.z / wvl)
         for i in range(self.height):
             for j in range(self.width):
                 x = (j - self.width / 2) * self.pp
@@ -132,12 +131,24 @@ class Propagation:
         plt.imsave(fname, img)
         return img
 
+    def singlechannel(self, fname, wvl):
+        """
+        extract single channel img
+        """
+        img = self.multicore(wvl)
+        phaseimg = self.normalize(img, 'phase')
+        f_phase = 'IM' + fname
+        plt.imsave(f_phase, phaseimg)
+        realimg = self.normalize(img, 'real')
+        f_real = 'RE' + fname
+        plt.imsave(f_real, realimg)
 
 if __name__ == '__main__':
-    p = Propagation(1, 'point_3.ply', angle=5, pp=4.6 * um, w=1920, h=1080)
+    p = Propagation(1, 'PointCloud_Dice_RGB.ply', angleY=22.5)
     print(p.plydata.shape)
-    print(p.plydata['x'][2])
 
-    ch = p.colorimg('3p_2.bmp')
+    ch = p.colorimg('3p_6.bmp')
     plt.imshow(ch)
     plt.show()
+    p.singlechannel('dice_py.bmp', p.wvl_G)
+    print("done")
