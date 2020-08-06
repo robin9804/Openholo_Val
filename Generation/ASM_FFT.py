@@ -48,11 +48,12 @@ class Propagation:
         """
         sizeX = self.pp * self.width
         sizeY = self.pp * self.height
+        res = self.width / 2
         a = np.zeros((self.height, self.width), dtype='complex128')
         for i in range(self.height):
             for j in range(self.width):
-                fx = (-1 / (2 * self.pp)) + (1 / sizeX) * j
-                fy = (1 / (2 * self.pp)) - (1 / sizeY) * (i + 1)
+                fx = (j / self.pp - 0.5) / self.pp / res #(-1 / (2 * self.pp)) + (1 / sizeX) * j
+                fy = (i / self.pp - 0.5) / self.pp / res #(1 / (2 * self.pp)) - (1 / sizeY) * (i + 1)
                 if np.sqrt(fx ** 2 + fy ** 2) < 1 / wvl:
                     fx = (fx + np.sin(self.thetaX)/wvl) * wvl
                     fy = (fy + np.sin(self.thetaY)/wvl) * wvl
@@ -74,7 +75,7 @@ class Propagation:
 
     def ASM_FFT(self, n, wvl):
         """
-        Fresnel FFT kernel
+        ASM FFT kernel
         """
         if wvl == self.wvl_G:
             color = 'green'
@@ -163,4 +164,4 @@ class Propagation:
 if __name__ == '__main__':
     p = Propagation(1,'point_3.ply', angleY=20)
     print(p.plydata.shape)
-    p.colorimg('ASM_3point_offaxis.bmp')
+    p.colorimg('ASM_3point_offaxis_2.bmp')
