@@ -134,9 +134,7 @@ class Propagation:
         return img
 
     def singlechannel(self, fname, wvl):
-        """
-        extract single channel img
-        """
+        """extract single channel img"""
         img = self.multicore(wvl)
         phaseimg = self.normalize(img, 'phase')
         f_phase = 'IM' + fname
