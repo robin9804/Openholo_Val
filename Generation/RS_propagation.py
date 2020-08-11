@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plyfile
 import multiprocessing
-from multiprocessing import Process, Queue
+
 # parameters
 mm = 1e-3
 um = 1e-6
@@ -11,7 +11,7 @@ nm = 1e-9
 
 class Propagation:
     """
-    Propagation simulation using multi-core processing
+    RS Propagation simulation using multi-core processing
     """
     def __init__(self, z, plypath, angleX=0, angleY=0, pp=3.6 * um, scaleXY=0.03, scaleZ=0.25, w=3840, h=2160):
         self.z = z
@@ -31,7 +31,7 @@ class Propagation:
         self.wvl_G = 520 * nm
         self.wvl_B = 450 * nm
         # parameter for multi core processing
-        self.num_cpu = 16 # multiprocessing.cpu_count()
+        self.num_cpu = multiprocessing.cpu_count()
         self.num_point = [i for i in range(len(self.plydata))]
 
     def k(self, wvl):
@@ -147,11 +147,11 @@ class Propagation:
         return phaseimg, realimg
 
 if __name__ == '__main__':
-    p = Propagation(1, 'PointCloud_Dice_RGB.ply')
+    p = Propagation(1, 'PointCloud_Dice_RGB.ply', angleY=22)
     print(p.plydata.shape)
 
-    #ch = p.colorimg('3p_6.bmp')
-    ch1, ch2 = p.singlechannel('dice_py_green.bmp', p.wvl_G)
-    plt.imshow(ch1)
+    ch = p.colorimg('Diceoffaxis_Y.bmp')
+    #ch1, ch2 = p.singlechannel('dice_py_green.bmp', p.wvl_G)
+    plt.imshow(ch)
     plt.show()
     print("done")

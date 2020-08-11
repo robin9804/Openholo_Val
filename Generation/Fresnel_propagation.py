@@ -13,7 +13,7 @@ class Propagation:
     """
     Fresnel Propagation simulation using multi-core processing
     """
-    def __init__(self, z, plypath, angleX=0, angleY=0, pp=3.6 * um, scaleXY=0.03, scaleZ=0.25, w=3840, h=2160):
+    def __init__(self, plypath, z=1, angleX=0, angleY=0, pp=3.6 * um, scaleXY=0.03, scaleZ=0.25, w=3840, h=2160):
         self.z = z
         self.pp = pp
         self.scaleXY = scaleXY
@@ -36,12 +36,12 @@ class Propagation:
     def k(self, wvl):
         return (np.pi *2) / wvl
 
-    def h_Fresnel(self, x1, y1, z1, x2, y2, z2, wvl):
+    def h_Fresnel(self, x1, y1, x2, y2, z, wvl):
         """
         impulse response function of Fresnel propagation method
         """
-        r = ((x1-x2)**2 + (y1-y2)**2) / (2*(z2 - z1))
-        t = (wvl * (z2 - z1)) / (2 * self.pp)
+        r = ((x1-x2)**2 + (y1-y2)**2) / (2*z)
+        t = (wvl * z) / (2 * self.pp)
         if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):  # anti aliasing
             h:complex = np.exp(1j * self.k(wvl) * (r + x2 * np.sin(self.thetaX) + y2 * np.sin(self.thetaY)))
         else:
@@ -61,13 +61,13 @@ class Propagation:
             color = 'red'
         x0 = self.plydata['x'][n] * self.scaleXY
         y0 = self.plydata['y'][n] * self.scaleXY
-        z0 = self.plydata['z'][n] * self.scaleZ
-        amp = self.plydata[color][n] * (np.exp(1j * self.k(wvl) * (self.z - z0)) / (1j * wvl * (self.z - z0)))
+        zz = self.z - self.plydata['z'][n] * self.scaleZ
+        amp = self.plydata[color][n] * (np.exp(1j * self.k(wvl) * zz) / (1j * wvl * zz))
         for i in range(self.height):
             for j in range(self.width):
                 x = (j - self.width / 2) * self.pp
                 y = (i - self.height / 2) * self.pp
-                c = self.h_Fresnel(x0, y0, z0, x, y, self.z, wvl)
+                c = self.h_Fresnel(x0, y0, x, y, zz, wvl)
                 c = c * amp
                 ch[i, j] = c
         print(n, " th point ", color, " done")
@@ -144,14 +144,18 @@ class Propagation:
 
 
 if __name__ == '__main__':
-    # set class
-    p = Propagation(1, 'point_3.ply')
+    #set class
+    p = Propagation('point_3.ply', angleY=20)
     print(p.plydata.shape)
 
     # get single channel image
-    ch1, ch2 = p.singlechannel('fresnel_3p.bmp', p.wvl_G)
+    #ch1, ch2 = p.singlechannel('fresnel_3p_off.bmp', p.wvl_G)
 
     # get color image
-    ch = p.colorimg('3p_Frsn_1.bmp')
-    plt.imshow(ch)
-    plt.show()
+    #ch = p.colorimg('3p_Frsn_2_off.bmp')
+    #plt.imshow(ch)
+    #plt.show()
+    
+    
+    #%%
+    ch1, ch2 = p.singlechannel('fresnel_point_off.bmp', p.wvl_G)

@@ -48,8 +48,8 @@ class Propagation:
         a = np.zeros((self.height, self.width))
         for i in range(self.width):
             for j in range(self.height):
-                x = (i - self.width / 2) * self.ph
-                y = (j - self.height / 2) * self.ph
+                x = (i - self.width / 2) / (self.height / 2) # * self.ph
+                y = -(j - self.height / 2)/ (self.height / 2) #* self.ph
                 if (x - self.ph < x1 < x + self.ph) and (y - self.ph < y1 < y + self.ph):
                     a[j, i] = 1  # amplitude
                     print(i, ", ", j)
@@ -99,7 +99,7 @@ class Propagation:
         using multicore processing
         """
         if wvl == self.wvl_G:
-            func = self.FFT_R
+            func = self.FFT_G
         elif wvl == self.wvl_B:
             func = self.FFT_B
         else:
@@ -155,6 +155,6 @@ class Propagation:
         return phaseimg, realimg
 
 if __name__ == '__main__':
-    p = Propagation(1, 'point_3.ply')
+    p = Propagation(1, 'point_3.ply', angleY=20)
     print(p.plydata.shape)
-    p.colorimg('FresnelFFT_3point_.bmp')
+    p.colorimg('FresnelFFT_3point_offaxis.bmp')
