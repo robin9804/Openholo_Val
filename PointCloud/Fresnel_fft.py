@@ -56,7 +56,7 @@ class Frsn_FFT(Encoding):
             for j in range(self.w):
                 x = (j - self.w/2) * self.pp
                 y = -(i - self.h/2) * self.pp
-                a[i, j] = cmath.exp(-1j * self.k(wvl) * (x * sin(self.thetaX + (self.wvl_B-wvl) / self.pp) + y * sin(self.thetaY + (self.wvl_B-wvl) / self.pp)))
+                a[i, j] = cmath.exp(-1j * self.k(wvl) * (x * sin(self.thetaX) + y * sin(self.thetaY)))
         return a / r
 
     def h_frsn(self, u):

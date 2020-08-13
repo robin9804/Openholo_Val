@@ -31,9 +31,9 @@ class Encoding:
             arrin = np.copy(np.abs(arr))
         else:
             arrin = np.copy(arr)
-        #arrin = np.float(arrin)
-        #arrin -= np.min(arrin)
-        arrin = arrin + np.abs(arrin)
+        # arrin = np.float(arrin)
+        arrin -= np.min(arrin)
+        # arrin = arrin + np.abs(arrin)
         arrin = arrin / np.max(arrin)
         return arrin
 
