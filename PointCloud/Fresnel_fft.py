@@ -35,6 +35,9 @@ class Frsn_FFT(Encoding):
         self.Ws = self.scaleXY              # Source plane width
         self.Nzp = int(self.Wr // self.ps + 1)   # zero padding number
         self.W = int(self.Nzp + self.w)
+        self.u_slm = self.h_frsn(self.pp)  # 나중에 여기에 1/(wvl * zz)을 제곱해주면 된다
+        self.u_obj = self.h_frsn(self.ps)
+
 
     def k(self, wvl):
         return (pi * 2) / wvl
@@ -53,16 +56,16 @@ class Frsn_FFT(Encoding):
             for j in range(self.w):
                 x = (j - self.w/2) * self.pp
                 y = -(i - self.h/2) * self.pp
-                a[i, j] = cmath.exp(-1j * self.k(wvl) * (x * sin(self.thetaX) + y * sin(self.thetaY)))
+                a[i, j] = cmath.exp(-1j * self.k(wvl) * (x * sin(self.thetaX + (self.wvl_B-wvl) / self.pp) + y * sin(self.thetaY + (self.wvl_B-wvl) / self.pp)))
         return a / r
 
-    def h_frsn(self, zz, wvl, u):
+    def h_frsn(self, u):
         a = np.zeros((self.W, self.W), dtype='complex128')
         for i in range(self.W):
             for j in range(self.W):
                 x = (i - self.W/2) * u
                 y = (j - self.W/2) * u
-                a[j, i] = cmath.exp(1j * self.k(wvl) * (x*x + y*y) / (2 * zz))
+                a[j, i] = cmath.exp(1j * pi * (x*x + y*y))
         return a
 
     def Frsn_FFT(self, n, wvl):
@@ -77,9 +80,9 @@ class Frsn_FFT(Encoding):
         y0 = self.plydata['y'][n]
         zz = self.z - self.plydata['z'][n] * self.scaleZ
         amp = self.plydata[color][n]
-        u0 = self.pointmap(x0, y0) * self.h_frsn(zz, wvl, self.ps) * amp
+        u0 = self.pointmap(x0, y0) * (self.u_obj ** (1/(wvl * zz))) * amp
         u0 = self.fft(u0)
-        ch = cmath.exp(1j * self.k(wvl) * zz) / (1j * wvl * zz) * self.h_frsn(zz, wvl, self.pp)
+        ch = cmath.exp(1j * self.k(wvl) * zz) / (1j * wvl * zz) * (self.u_slm ** (1/(wvl * zz)))
         ch = ch * u0
         ch = ch[(self.W - self.h) // 2: (self.W + self.h) // 2, (self.W - self.w) // 2: (self.W + self.w) // 2]
         ch = ch * self.refwave(wvl, zz)

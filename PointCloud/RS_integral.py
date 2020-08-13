@@ -37,8 +37,8 @@ class RS(Encoding):
         r = sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + (z1 - z2) * (z1 - z2))
         t = (wvl * r) / (2 * self.pp)  # anti alliasing conditio
         if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):
-            h_r = sin(self.k(wvl) * (r + x2 * sin(self.thetaX) + y2 * sin(self.thetaY)))
-            h_i = cos(self.k(wvl) * (r + x2 * sin(self.thetaX) + y2 * sin(self.thetaY)))
+            h_r = sin(self.k(wvl) * (r + x2 * sin(self.thetaX + (self.wvl_B-wvl) / self.pp) + y2 * sin(self.thetaY + (self.wvl_B-wvl) / self.pp)))
+            h_i = cos(self.k(wvl) * (r + x2 * sin(self.thetaX + (self.wvl_B-wvl) / self.pp) + y2 * sin(self.thetaY + (self.wvl_B-wvl) / self.pp)))
         else:
             h_r, h_i = 0
         return h_r / (r * r), h_i / (r * r)
