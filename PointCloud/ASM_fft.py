@@ -98,6 +98,7 @@ class ASM(Encoding):
         ch = ch[(W-h)//2: (W+h)//2, (W-w)//2: (W+w)//2]
         ch = ch * self.refwave(wvl, zz)
         print(n, ' point', color,' is done')
+        return ch
 
     def FFT_R(self, n):
         return self.Cal(n, 'red')
