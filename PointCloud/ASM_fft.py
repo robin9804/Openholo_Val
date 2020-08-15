@@ -1,61 +1,67 @@
 import numpy as np
 import plyfile
-from math import *
-import cmath
 import multiprocessing
 
+from concurrent.futures import ProcessPoolExecutor
+from numba import njit
 from encoding import Encoding
 
+# parameters
+mm = 1e-3
+um = mm * mm
+nm = um * mm
+wvl_R = 639 * nm  # Red
+wvl_G = 525 * nm  # Green
+wvl_B = 463 * nm  # Blue
+
+# SLM parameters
+w = 3840  # width
+h = 2160  # height
+pp = 3.6 * um  # SLM pixel pitch
+scaleXY = 0.03
+scaleZ = 0.25
+ps = scaleXY / w    # source plane pixel pitch (sampling rate)
+Wr = pp * w         # Receiver plane width
+Ws = scaleXY        # Source plane width
+
+# inline function
+@njit(nogil=True, cache=True)
+def k(wvl):
+    return (np.pi * 2) / wvl
+
+@njit(nogil=True, cache=True)
+def nzp(zz, wvl):
+    p = (wvl * zz) / np.sqrt(4 * ps * ps - wvl * wvl)
+    return int((1 / ps) * (Wr/2 - Ws/2 + p) + 1)
+
+@njit(nogil=True)
+def asm_kernel(zz, wvl):
+    N = nzp(zz, wvl)
+    W = N + w
+    deltak = wvl / (W * ps)
+    re = np.zeros((W,W))
+    im = np.zeros((W,W))
+    for i in range(W):
+        for j in range(W):
+            fx = ((i - W / 2) * deltak)
+            fy = ((j - W / 2) * deltak)
+            if np.sqrt(fx * fx + fy * fy) < (1 / wvl) ** 3:
+                re[j, i] = np.cos(k(wvl) * zz * np.sqrt(1 - fx * fx - fy * fy))
+                im[j, i] = np.sin(k(wvl) * zz * np.sqrt(1 - fx * fx - fy * fy))
+        print(zz, 'kernel ready')
+        return re, im
 
 class ASM(Encoding):
-    """Angular spectrum method using Convolution and point cloud data"""
-    mm = 1e-3
-    um = mm * mm
-    nm = um * mm
-    def __init__(self, plypath, f=1, angleX=0, angleY=0, pixel_pitch=3.6 * um, scaleXY=0.03, scaleZ=0.25,
-                 width=3840, height=2160, wvl_R=638*nm, wvl_G=520 * nm, wvl_B=450 * nm):
+    """Angular spectrum method FFT propagation"""
+    def __init__(self, plypath, f=1, angleX=0, angleY=0):
         self.z = f  # Propagation distance
-        self.pp = pixel_pitch
-        self.scaleXY = scaleXY
-        self.scaleZ = scaleZ
-        self.w = width
-        self.h = height
-        self.thetaX = angleX * (pi / 180)
-        self.thetaY = angleY * (pi / 180)
+        self.thetaX = angleX * (np.pi / 180)
+        self.thetaY = angleY * (np.pi / 180)
         with open(plypath, 'rb') as f:
             self.plydata = plyfile.PlyData.read(f)
             self.plydata = np.array(self.plydata.elements[1].data)
-        self.wvl_R = wvl_R
-        self.wvl_G = wvl_G
-        self.wvl_B = wvl_B
         self.num_cpu = multiprocessing.cpu_count()  # number of CPU
         self.num_point = [i for i in range(len(self.plydata))]
-        self.ps = self.scaleXY / self.w     # source plane pixel pitch (sampling rate)
-        self.Wr = self.pp * self.w          # Receiver plane width
-        self.Ws = self.scaleXY              # Source plane width
-
-    def k(self, wvl):
-        return (pi * 2) / wvl
-
-    def Nzp(self, zz, wvl):
-        """Number of zero padding"""
-        p = (wvl * zz) / sqrt(4 * self.ps * self.ps - wvl * wvl)
-        return int((1 / self.ps) * (self.Wr/2 - self.Ws/2 + p) + 1)
-
-    def asm_kernel(self, zz, wvl):
-        """ASM kernel"""
-        N = self.Nzp(zz, wvl)
-        W = N + self.w
-        deltaK = (2 * pi) / (W * self.ps)
-        a = np.zeros((W, W), dtype='complex128')
-        for i in range(W):
-            for j in range(W):
-                fx = ((i - W / 2) * deltaK) / self.k(wvl)
-                fy = ((j - W / 2) * deltaK) / self.k(wvl)
-                if np.sqrt(fx * fx + fy * fy) < (1 / wvl) ** 3:
-                    a[i, j] = cmath.exp(1j * self.k(wvl) * zz * cmath.sqrt(1 - fx * fx - fy * fy))
-        print(zz, 'kernel ready')
-        return a
 
     def refwave(self, wvl, r):
         a = np.zeros((self.h, self.w), dtype='complex128')
@@ -63,63 +69,62 @@ class ASM(Encoding):
             for j in range(self.w):
                 x = (j - self.w/2) * self.pp
                 y = -(i - self.h/2) * self.pp
-                a[i, j] = cmath.exp(-1j * self.k(wvl) * (x * sin(self.thetaX) + y * sin(self.thetaY)))
+                a[i, j] = np.exp(-1j * self.k(wvl) * (x * np.sin(self.thetaX) + y * np.sin(self.thetaY)))
         return a / r
 
-    def ASM_FFT(self, n, wvl):
-        """
-        ASM FFT kernel
-        """
-        if wvl == self.wvl_G:
-            color = 'green'
-        elif wvl == self.wvl_B:
-            color = 'blue'
+    def Cal(self, n, color='red'):
+        """FFT calcuation"""
+        ch = np.zeros((h, w), dtype='complex128')
+        if color == 'green':
+            wvl = wvl_G
+        elif color == 'blue':
+            wvl = wvl_B
         else:
-            color = 'red'
+            wvl = wvl_R
         x0 = self.plydata['x'][n]
         y0 = self.plydata['y'][n]
-        zz = self.z - self.plydata['z'][n] * self.scaleZ
+        zz = self.z - self.plydata['z'][n] * scaleZ
         # point map
-        N = self.Nzp(zz, wvl)
-        W = N + self.w
+        N = nzp(zz, wvl)
+        W = N + w
         pmap = np.zeros((W, W))
-        p = np.int((x0 + 1) * (self.w / 2))
-        q = np.int((1 - y0) * (self.w / 2))
+        p = np.int((x0 + 1) * (w / 2))
+        q = np.int((1 - y0) * (w / 2))
         pmap[q + N//2, p + N//2] = 1
         print(n, 'th p map done')
         amp = self.plydata[color][n] * pmap
         amp = self.fft(amp)
-        ch = self.ifft(amp * self.asm_kernel(zz, wvl))
-        ch = ch[(W-self.h)//2: (W+self.h)//2, (W-self.w)//2: (W + self.w)//2]
+        ch = self.ifft(amp *asm_kernel(zz, wvl))
+        ch = ch[(W-h)//2: (W+h)//2, (W-w)//2: (W+w)//2]
         ch = ch * self.refwave(wvl, zz)
         print(n, ' point', color,' is done')
-        return ch
 
     def FFT_R(self, n):
-        return self.ASM_FFT(n, self.wvl_R)
+        return self.Cal(n, 'red')
 
     def FFT_G(self, n):
-        return self.ASM_FFT(n, self.wvl_G)
+        return self.Cal(n, 'green')
 
     def FFT_B(self, n):
-        return self.ASM_FFT(n, self.wvl_B)
+        return self.Cal(n, 'blue')
 
-    def CalHolo(self, wvl):
-        """Calculate hologram using multicore processing"""
-        if wvl == self.wvl_G:
+    def CalHolo(self, color='red'):
+        """Calculate hologram"""
+        if color == 'green':
             func = self.FFT_G
-        elif wvl == self.wvl_B:
+        elif color == 'blue':
             func = self.FFT_B
         else:
             func = self.FFT_R
         print(self.num_cpu, " core Ready")
-        result = np.zeros((self.h, self.w), dtype='complex128')
-        s = np.split(self.num_point, [i * self.num_cpu for i in range(1, len(self.plydata) // self.num_cpu)])
-        for n in s:
-            pool = multiprocessing.Pool(processes=self.num_cpu)
-            summ = pool.map(func, list(n))
-            for i in range(len(summ)):
-                result += summ[i]
-            pool.close()
-            pool.join()
-        return result
+        ch = np.zeros((h, w), dtype='complex128')
+        count = np.split(self.num_point, [i * self.num_cpu for i in range(1, len(self.plydata) // self.num_cpu)])
+        print(count)
+        for n in count:
+            with ProcessPoolExecutor(self.num_cpu) as ex:
+                cache = [result for result in ex.map(func, list(n))]
+                cache = np.asarray(cache)
+                print(n, 'steps done')
+                for j in range(len(n)):
+                    ch += cache[j, :, :]
+        return ch
