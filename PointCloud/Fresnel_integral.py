@@ -1,100 +1,115 @@
 import numpy as np
 import plyfile
-from math import *
-import cmath
+from numba import njit
+from concurrent.futures import ProcessPoolExecutor
+import encoding
 import multiprocessing
 
-from encoding import Encoding
+
+# parameters
+mm = 1e-3
+um = mm * mm
+nm = um * mm
+wvl_R = 639 * nm  # Red
+wvl_G = 525 * nm  # Green
+wvl_B = 463 * nm  # Blue
+
+# SLM parameters
+w = 3840  # width
+h = 2160  # height
+pp = 3.6 * um  # SLM pixel pitch
+scaleXY = 0.03
+scaleZ = 0.25
 
 
-class Frsn_Integral(Encoding):
-    """Fresnel Propagation using Convolution"""
-    mm = 1e-3
-    um = mm * mm
-    nm = um * mm
-    def __init__(self, plypath, f=1, angleX=0, angleY=0, pixel_pitch=3.6 * um, scaleXY=0.03, scaleZ=0.25,
-                 width=3840, height=2160, wvl_R=638 * nm, wvl_G=520 * nm, wvl_B=450 * nm):
+@njit(nogil=True, cache=True)
+def k(wvl):
+    return (np.pi * 2) / wvl
+
+@njit(nogil=True)
+def h_Fresnel(x1, y1, x2, y2, z, wvl, thetaX, thetaY):
+    """impulse response function of Fresnel propagation method"""
+    r = ((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2)) / (2*z)
+    t = (wvl * z) / (2 * pp)
+    if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):  # anti aliasing
+        h_r = np.cos(k(wvl) * (r + x2 * np.sin(thetaX) + y2 * np.sin(thetaY)))
+        h_i = np.sin(k(wvl) * (r + x2 * np.sin(thetaX) + y2 * np.sin(thetaY)))
+    else:
+        h_r = 0
+        h_i = 0
+    return h_r, h_i
+
+
+@njit(nogil=True)
+def Conv(x1, y1, z1, z2, amp, wvl, thetaX, thetaY):
+    zz = z2 - z1
+    ch_r = np.zeros((h, w))
+    ch_i = np.zeros((h, w))
+    for i in range(h):
+        for j in range(w):
+            x2 = (j - w / 2) * pp
+            y2 = -(i - h / 2) * pp
+            re, im = h_Fresnel(x1, y1, x2, y2, zz, wvl, thetaX, thetaY)
+            ch_r[i, j] = re
+            ch_i[i, j] = im
+    print('point done')
+    return (ch_r + 1j * ch_i) * amp
+
+
+class Frsn(encoding.Encoding):
+    def __init__(self, plypath, f=1, angleX=0, angleY=0):
         self.z = f  # Propagation distance
-        self.pp = pixel_pitch
-        self.scaleXY = scaleXY
-        self.scaleZ = scaleZ
-        self.w = width
-        self.h = height
-        self.thetaX = angleX * (pi / 180)
-        self.thetaY = angleY * (pi / 180)
+        self.thetaX = angleX * (np.pi / 180)
+        self.thetaY = angleY * (np.pi / 180)
         with open(plypath, 'rb') as f:
             self.plydata = plyfile.PlyData.read(f)
             self.plydata = np.array(self.plydata.elements[1].data)
-        self.wvl_R = wvl_R
-        self.wvl_G = wvl_G
-        self.wvl_B = wvl_B
         self.num_cpu = multiprocessing.cpu_count()  # number of CPU
         self.num_point = [i for i in range(len(self.plydata))]
 
-    def k(self, wvl):
-        return (pi * 2) / wvl
-
-    def h_Fresnel(self, x1, y1, x2, y2, z, wvl):
-        """impulse response function of Fresnel propagation method"""
-        r = ((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2)) / (2*z)
-        t = (wvl * z) / (2 * self.pp)
-        if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):  # anti aliasing
-            h:complex = cmath.exp(1j * self.k(wvl) * (r + x2 * sin(self.thetaX) + y2 * sin(self.thetaY)))
-        else:
-            h = 0
-        return h
-
-    def Conv(self, n, wvl):
+    def Cal(self, n, color='red'):
         """Convolution"""
-        ch = np.zeros((self.h, self.w), dtype='complex128')
-        if wvl == self.wvl_G:
-            color = 'green'
-        elif wvl == self.wvl_B:
-            color = 'blue'
+        ch = np.zeros((h, w), dtype='complex128')
+        if color == 'green':
+            wvl = wvl_G
+        elif color == 'blue':
+            wvl = wvl_B
         else:
-            color = 'red'
-        x0 = self.plydata['x'][n] * self.scaleXY
-        y0 = self.plydata['y'][n] * self.scaleXY
-        zz = self.z - self.plydata['z'][n] * self.scaleZ
-        amp = self.plydata[color][n] * (cmath.exp(1j * self.k(wvl) * zz) / (1j * wvl * zz))
-        for i in range(self.h):
-            for j in range(self.w):
-                x = (j - self.w / 2) * self.pp
-                y = -(i - self.h / 2) * self.pp
-                c = self.h_Fresnel(x0, y0, x, y, zz, wvl)
-                c = c * amp
-                ch[i, j] = c
-            if i % (self.h / 10) == 0:
-                print(n, 'point', (i // (self.h / 10)) * 10, '% done')
-
-        print(n, " th point ", color, " done")
+            wvl = wvl_R
+        x0 = self.plydata['x'][n] * scaleXY
+        y0 = self.plydata['y'][n] * scaleXY
+        z0 = self.plydata['z'][n] * scaleZ
+        amp = self.plydata[color][n] * (self.z / wvl)
+        ch = Conv(x0, y0, z0, self.z, amp, wvl, self.thetaX, self.thetaY)
+        print(n, ' th point ', color, ' Done')
         return ch
 
-    def Conv_R(self,n):
-        return self.Conv(n, self.wvl_R)
+    def Conv_R(self, n):
+        return self.Cal(n, 'red')
 
-    def Conv_G(self,n):
-        return self.Conv(n, self.wvl_G)
+    def Conv_G(self, n):
+        return self.Cal(n, 'green')
 
-    def Conv_B(self,n):
-        return self.Conv(n, self.wvl_B)
+    def Conv_B(self, n):
+        return self.Cal(n, 'blue')
 
-    def CalHolo(self, wvl):
-        """Calculate hologram using multicore processing"""
-        if wvl == self.wvl_G:
+    def CalHolo(self, color='red'):
+        """Calculate hologram"""
+        if color == 'green':
             func = self.Conv_G
-        elif wvl == self.wvl_B:
+        elif color == 'blue':
             func = self.Conv_B
         else:
             func = self.Conv_R
         print(self.num_cpu, " core Ready")
-        result = np.zeros((self.h, self.w), dtype='complex128')
-        s = np.split(self.num_point, [i*self.num_cpu for i in range(1, len(self.plydata) // self.num_cpu)])
-        for n in s:
-            pool = multiprocessing.Pool(processes=self.num_cpu)
-            summ = pool.map(func, list(n))
-            for i in range(len(summ)):
-                result += summ[i]
-            pool.close()
-            pool.join()
-        return result
+        ch = np.zeros((h, w), dtype='complex128')
+        count = np.split(self.num_point, [i * self.num_cpu for i in range(1, len(self.plydata) // self.num_cpu)])
+        print(count)
+        for n in count:
+            with ProcessPoolExecutor(self.num_cpu) as ex:
+                cache = [result for result in ex.map(func, list(n))]
+                cache = np.asarray(cache)
+                print(n, 'steps done')
+                for j in range(len(n)):
+                    ch += cache[j, :, :]
+        return ch
