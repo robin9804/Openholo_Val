@@ -74,7 +74,7 @@ class ASM(Encoding):
 
     def Cal(self, n, color='red'):
         """FFT calcuation"""
-        ch = np.zeros((h, w), dtype='complex128')
+        ch = np.zeros((W, W), dtype='complex128')
         if color == 'green':
             wvl = wvl_G
         elif color == 'blue':
