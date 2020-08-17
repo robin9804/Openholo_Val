@@ -4,7 +4,7 @@ import multiprocessing
 
 from concurrent.futures import ProcessPoolExecutor
 from numba import njit
-from encoding import Encoding
+from functions.encoding import Encoding
 
 # parameters
 mm = 1e-3
@@ -20,25 +20,28 @@ h = 2160  # height
 pp = 3.6 * um  # SLM pixel pitch
 scaleXY = 0.03
 scaleZ = 0.25
-ps = scaleXY / w    # source plane pixel pitch (sampling rate)
-Wr = pp * w         # Receiver plane width
-Ws = scaleXY        # Source plane width
+ps = scaleXY / w  # source plane pixel pitch (sampling rate)
+Wr = pp * w  # Receiver plane width
+Ws = scaleXY  # Source plane width
 Nzp = int(Wr / ps + 1)  # zero padding number
-Wtotal = int(Nzp + w)   # total width
+Wtotal = int(Nzp + w)  # total width
+
 
 # inline function
 @njit(nogil=True, cache=True)
 def k(wvl):
     return (np.pi * 2) / wvl
 
+
 @njit(nogil=True)
 def pointmap(x, y):
     pmap = np.zeros((Wtotal, Wtotal))
-    p = int((x+1) * (Wtotal / 2))
-    q = int((1-y) * (Wtotal / 2))
+    p = int((x + 1) * (w / 2))
+    q = int((1 - y) * (w / 2))
     pmap[q + Nzp // 2, p + Nzp // 2] = 1
     print(p, ',', q)
     return pmap
+
 
 @njit(nogil=True, cache=True)
 def h_frsn(pixel):
@@ -46,15 +49,16 @@ def h_frsn(pixel):
     im = np.zeros((Wtotal, Wtotal))
     for i in range(Wtotal):
         for j in range(Wtotal):
-            x = (i - Wtotal/2) * pixel
-            y = (j - Wtotal/2) * pixel
-            re[j, i] = np.cos(np.pi * (x*x + y*y))
-            im[j, i] = np.sin(np.pi * (x*x + y*y))
-    return re + 1j*im
+            x = (i - Wtotal / 2) * pixel
+            y = (j - Wtotal / 2) * pixel
+            re[j, i] = np.cos(np.pi * (x * x + y * y))
+            im[j, i] = np.sin(np.pi * (x * x + y * y))
+    return re + 1j * im
 
 
 class FrsnFFT(Encoding):
     """fresnel FFT propagation"""
+
     def __init__(self, plypath, f=1, angleX=0, angleY=0):
         self.z = f  # Propagation distance
         self.thetaX = angleX * (np.pi / 180)
@@ -65,17 +69,17 @@ class FrsnFFT(Encoding):
         self.num_cpu = multiprocessing.cpu_count()  # number of CPU
         self.num_point = [i for i in range(len(self.plydata))]
         self.u_slm = h_frsn(pp)  # * 1/(wvl * zz)
-        self.u_slm = h_frsn(ps)
+        self.u_obj = h_frsn(ps)
 
     def refwave(self, wvl, r):
-        a = np.zeros((self.h, self.w), dtype='complex128')
-        for i in range(self.h):
-            for j in range(self.w):
-                x = (j - self.w/2) * self.pp
-                y = -(i - self.h/2) * self.pp
-                a[i, j] = np.exp(-1j * self.k(wvl) * (x * np.sin(self.thetaX) + y * np.sin(self.thetaY)))
+        a = np.zeros((h, w), dtype='complex128')
+        for i in range(h):
+            for j in range(w):
+                x = (j - w / 2) * pp
+                y = -(i - h / 2) * pp
+                a[i, j] = np.exp(-1j * k(wvl) * (x * np.sin(self.thetaX) + y * np.sin(self.thetaY)))
         return a / r
-    
+
     def Cal(self, n, color='red'):
         """FFT calcuation"""
         if color == 'green':
@@ -88,13 +92,13 @@ class FrsnFFT(Encoding):
         y0 = self.plydata['y'][n]
         zz = self.z - self.plydata['z'][n] * scaleZ
         amp = self.plydata[color][n]
-        u0 = pointmap(x0, y0) * (self.u_obj ** (1/ (wvl * zz))) * amp
+        u0 = pointmap(x0, y0) * (self.u_obj ** (1 / (wvl * zz))) * amp
         u0 = self.fft(u0)
-        ch = (np.exp(1j * k(wvl) * zz) / (1j*wvl*zz)) * (self.u_slm ** (1/ (wvl * zz)))
+        ch = (np.exp(1j * k(wvl) * zz) / (1j * wvl * zz)) * (self.u_slm ** (1 / (wvl * zz)))
         ch = ch * u0
-        ch = ch[(Wtotal-h)//2: (Wtotal+h)//2, (Wtotal-w)//2: (Wtotal+w)//2]
+        ch = ch[(Wtotal - h) // 2: (Wtotal + h) // 2, (Wtotal - w) // 2: (Wtotal + w) // 2]
         ch = ch * self.refwave(wvl, zz)
-        print(n, ' point', color,' is done')
+        print(n, ' point', color, ' is done')
         return ch
 
     def FFT_R(self, n):
@@ -126,3 +130,4 @@ class FrsnFFT(Encoding):
                 for j in range(len(n)):
                     ch += cache[j, :, :]
         return ch
+
