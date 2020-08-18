@@ -38,21 +38,33 @@ def nzp(zz, wvl):
 
 
 @njit(nogil=True)
-def asm_kernel(zz, wvl):
-    N = nzp(zz, wvl)
-    W = N + w
-    deltak = wvl / (W * ps)
+def asm_kernel(zz, wvl, W):
+    # N = nzp(zz, wvl)
+    # W = N + w
+    deltak = wvl / (W * pp)
     re = np.zeros((W, W))
     im = np.zeros((W, W))
     for i in range(W):
         for j in range(W):
             fx = ((i - W / 2) * deltak)
             fy = ((j - W / 2) * deltak)
-            if np.sqrt(fx * fx + fy * fy) < (1 / wvl) ** 3:
+            if (fx * fx + fy * fy) < (1 / wvl) ** 2:
                 re[j, i] = np.cos(k(wvl) * zz * np.sqrt(1 - fx * fx - fy * fy))
                 im[j, i] = np.sin(k(wvl) * zz * np.sqrt(1 - fx * fx - fy * fy))
-        print(zz, 'kernel ready')
-        return re + 1j * im
+    print(zz, 'kernel ready')
+    return re + 1j * im
+
+@njit(nogil=True)
+def Refwave(wvl, r, thetax, thetay):
+    a = np.zeros((h, w))
+    b = np.zeros((h, w))
+    for i in range(h):
+        for j in range(w):
+            x = (j - w / 2) * pp
+            y = -(i - h / 2) * pp
+            a[i, j] = np.cos(-k(wvl) * (x * np.sin(thetax) + y * np.sin(thetay)))
+            b[i, j] = np.sin(-k(wvl) * (x * np.sin(thetax) + y * np.sin(thetay)))
+    return a / r - 1j * (b / r)
 
 
 class ASM(Encoding):
@@ -67,18 +79,8 @@ class ASM(Encoding):
         self.num_cpu = multiprocessing.cpu_count()  # number of CPU
         self.num_point = [i for i in range(len(self.plydata))]
 
-    def refwave(self, wvl, r):
-        a = np.zeros((h, w), dtype='complex128')
-        for i in range(h):
-            for j in range(w):
-                x = (j - w / 2) * pp
-                y = -(i - h / 2) * pp
-                a[i, j] = np.exp(-1j * k(wvl) * (x * np.sin(self.thetaX) + y * np.sin(self.thetaY)))
-        return a / r
-
     def Cal(self, n, color='red'):
         """FFT calcuation"""
-
         if color == 'green':
             wvl = wvl_G
         elif color == 'blue':
@@ -98,9 +100,11 @@ class ASM(Encoding):
         print(n, 'th p map done')
         amp = self.plydata[color][n] * pmap
         amp = self.fft(amp)
-        ch = self.ifft(amp * asm_kernel(zz, wvl))
-        ch = ch[(W - h) // 2: (W + h) // 2, (W - w) // 2: (W + w) // 2]
-        ch = ch * self.refwave(wvl, zz)
+        amp = amp[(W - w) // 2: (W + w) // 2, (W - w) // 2: (W + w) // 2]  # width x width
+        ch = self.ifft(amp * asm_kernel(zz, wvl, w))
+        del amp
+        ch = ch[(w - h) // 2: (w + h) // 2, :]
+        ch = ch * Refwave(wvl, zz, self.thetaX, self.thetaY) * self.plydata[color][n]
         print(n, ' point', color, ' is done')
         return ch
 
@@ -124,7 +128,7 @@ class ASM(Encoding):
         print(self.num_cpu, " core Ready")
         ch = np.zeros((h, w), dtype='complex128')
         count = np.split(self.num_point, [i * self.num_cpu for i in range(1, len(self.plydata) // self.num_cpu)])
-        print(count)
+        # print(count)
         for n in count:
             with ProcessPoolExecutor(self.num_cpu) as ex:
                 cache = [result for result in ex.map(func, list(n))]
