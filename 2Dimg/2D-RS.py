@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-from functions.encoding import Encoding
+from depthmap.encoding import Encoding
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 from numba import njit
@@ -57,24 +57,7 @@ def pointConv(x1, y1, z, wvl, amp):
     return u_re, u_im
 
 
-@njit(nogil=True)
-def rowConv(image, row, wvl):
-    u_re = np.zeros((h,w))
-    u_im = np.zeros((h,w))
-    for n in range(h):
-        if image[n, row] == 0:
-            pass
-        amp = image[n, row]
-        x1 = (row - w/2 ) * pp
-        y1 = (n - h/2 ) * pp
-        re, im = pointConv(x1, y1, 0, amp, wvl)
-        u_re += re
-        u_im += im
-        print(n, ' raw ready')
-    return u_re + 1j * u_im
-
-
-class RS(Encoding.encoding):
+class RS(Encoding):
     def __init__(self, imgpath, f=1):
         self.z = f  # Propagation distance
         self.imagein = np.asarray(Image.open(imgpath))
@@ -83,6 +66,21 @@ class RS(Encoding.encoding):
         self.imgG = np.double(self.imagein[:, :, 1])
         self.imgB = np.double(self.imagein[:, :, 2])
         self.num_point = [i for i in range(w)]
+
+    def rowConv(self,image, row, wvl):
+        u_re = np.zeros((h, w))
+        u_im = np.zeros((h, w))
+        for n in range(h):
+            if image[n, row] == 0:
+                continue
+            amp = image[n, row]
+            x1 = (row - w / 2) * pp
+            y1 = (n - h / 2) * pp
+            re, im = pointConv(x1, y1, 0, amp, wvl)
+            u_re += re
+            u_im += im
+            print(n, ' raw ready')
+        return u_re + 1j * u_im
 
     def Cal(self, row, color='red'):
         """Convolution"""
@@ -95,7 +93,7 @@ class RS(Encoding.encoding):
         else:
             wvl = wvl_R
             img = self.imgR
-        ch = rowConv(img, row, wvl)
+        ch = self.rowConv(img, row, wvl)
         print(row, ' th point ', color, ' Done')
         return ch
 
@@ -128,9 +126,3 @@ class RS(Encoding.encoding):
                 for j in range(len(n)):
                     ch += cache[j, :, :]
         return ch
-
-def main():
-    a = RS('imgin.bmp')
-    a.CalHolo()
-
-if __name__ == '__main__':
