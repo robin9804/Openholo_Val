@@ -11,47 +11,42 @@ asm_kernel = @(f, wvl, x, y, res, pp) exp(-2j*pi*f .* sqrt( wvl^-2 - ((x/pp - 0.
 norm2int = @(img) uint8(255.*img./max(max(img)));
 
 % parameters
-h = 1080; v = 1920;
-wvl = 520 * nm;
-pp = 3.45*um; % pixel pitch
+h = 2160; v = 3840;
+wvl = 525 * nm;
+pp = 3.6*um; % pixel pitch
 res = v/2;
-ReconstLength = 0.8;
+ReconstLength = 1;
 
 % input file name
-fim_py = 'phase_3point_3.bmp';
-fre_py = 'real_3point_3.bmp';
+fim_py = '200827_oph_3point_1_phase_3ch.bmp';
+fre_py = '200827_oph_3point_1_amp_3ch.bmp';
 
-% Convert to complex image
+%% Convert to complex image
+% phase part
 im_py = imread(fim_py);
-im_py = im_py(:, 421:1500, 1);
+im_py = double(im_py) ./ 255;
+im_py = im_py(:, (v-h)/2+1:(v+h)/2, 2);  % crop
+phase = (im_py - 0.5) .* (2*pi);
+
+% amplitude part
 re_py = imread(fre_py);
-re_py = re_py(:,421:1500,1);
-im_py = double(im_py);
-re_py = double(re_py);
+re_py = double(re_py) ./ 255;
+re_py = re_py(:,(v-h)/2+1:(v+h)/2, 2);
 
 % adapt ASM
 r = (-pp*h/2 + pp/2):pp:(pp*h/2 - pp/2);
 c =  r; 
 [C, R] = meshgrid(c, r);
 
-% Case: phase and amplitude encoded image
-im = im_py;
-re = re_py;
-re = (re/256) * pi * 2;
-
-imag = im .* sin(re);
-real = im .* cos(re); 
-
 % Complex image
 %ch = real + 1j*imag;
-ch = re_py + 1j*im_py;
+ch = re_py .* exp(1j.*phase);
 A = fftshift(fft2(fftshift(ch)));
 
-%%
-% Reconstruction part
+%% Reconstruction part
 
 figure;
-for zz = (300:10:600)*mm
+for zz = (500:10:1500)*mm
 %for zz = ReconstLength * mm
     p = asm_kernel(zz, wvl, C, R, res, pp);
     Az1 = A .* p;
