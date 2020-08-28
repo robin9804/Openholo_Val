@@ -31,10 +31,16 @@ def k(wvl):
 @njit(nogil=True)
 def h_RS(x1, y1, z1, x2, y2, z2, wvl):
     """Impulse Response of R-S propagation"""
-    r = np.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + (z1 - z2) * (z1 - z2))
-    # t = (wvl * r) / (2 * pp)  # anti alliasing condition, 삭제
-    h_r = np.sin(k(wvl) * r)
-    h_i = np.cos(k(wvl) * r)
+    z = (z1 - z2) * (wvl / wvl_B)   # 2번 거리 z 보정
+    r = np.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + z * z)
+    t = (wvl * r) / (2 * pp)  # anti alliasing condition, 삭제
+    if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):
+        h_r = np.sin(k(wvl) * r)
+        h_i = np.cos(k(wvl) * r)
+    else:
+        h_r = 0
+
+        h_i = 0
     return h_r / (r * r), h_i / (r * r)
 
 
@@ -53,6 +59,7 @@ def Conv(x1, y1, z1, z2, amp, wvl):
     return (ch_r + 1j * ch_i) * amp
 
 
+
 class RS(Encoding):
     def __init__(self, plypath, f=1, angleX=0, angleY=0):
         self.z = f  # Propagation distance
@@ -64,17 +71,6 @@ class RS(Encoding):
         self.num_cpu = multiprocessing.cpu_count()  # number of CPU
         self.num_point = [i for i in range(len(self.plydata))]
 
-    def refwave(self, wvl, r):
-        a = np.zeros((h, w))
-        b = np.zeros((h, w))
-        for i in range(h):
-            for j in range(w):
-                x = (j - w/2) * pp
-                y = -(i - h/2) * pp
-                a[i, j] = np.cos(k(wvl) * (x * np.sin(self.thetaX) + y * np.sin(self.thetaY)))
-                b[i, j] = np.sin(k(wvl) * (x * np.sin(self.thetaX) + y * np.sin(self.thetaY)))
-        return a / r,  b / r
-
     def Cal(self, n, color='red'):
         """Convolution"""
         ch = np.zeros((h, w), dtype='complex128')
@@ -84,8 +80,8 @@ class RS(Encoding):
             wvl = wvl_B
         else:
             wvl = wvl_R
-        x0 = self.plydata['x'][n] * scaleXY
-        y0 = self.plydata['y'][n] * scaleXY
+        x0 = (self.plydata['x'][n] + self.z * self.thetaX) * scaleXY
+        y0 = (self.plydata['y'][n] + self.z * self.thetaY) * scaleXY
         z0 = self.plydata['z'][n] * scaleZ
         amp = self.plydata[color][n] * (self.z / wvl)
         ch = Conv(x0, y0, z0, self.z, amp, wvl)
