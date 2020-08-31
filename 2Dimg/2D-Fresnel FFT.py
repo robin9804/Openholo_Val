@@ -1,62 +1,36 @@
-"""
-Fresnel FFT를 활용하여 홀로그램 생성하기 workflow
-1. input image RGB로 분리
-2. RGB 파장에 따른 이미지 resize (B/R, B/G)로
-3. 이미지 가운데로 분류
-4. Fresnel FFT 적용 (with zero padding)
-5. Phase angle 추출
-"""
 import numpy as np
-from numba import njit
 import matplotlib.pyplot as plt
 from PIL import Image
-
+from depthmap.encoding import Encoding
+from concurrent.futures import ProcessPoolExecutor
+from numba import njit
 
 # parameters
 mm = 1e-3
 um = mm * mm
 nm = um * mm
-wvls = [639 * nm, 525 * nm, 463 * nm]
 wvl_R = 639 * nm  # Red
 wvl_G = 525 * nm  # Green
 wvl_B = 463 * nm  # Blue
 
+
 # SLM parameters
-w = 3840  # width
-h = 2160  # height
-pp = 3.6 * um  # SLM pixel pitch
-scaleXY = 0.03
+w = 3840            # width
+h = 2160            # height
+pp = 3.6 * um       # SLM pixel pitch
+scaleXY = 0.03      # Source plane width
 scaleZ = 0.25
+w_img = int(scaleXY / pp)   # image resize (sampling period)
+h_img = int(w_img * (9 / 16))
+Wr = pp * w         # Reciver plane width
 
-# image input
-img = Image.open('dice_black.bmp')
-img = img.resize((3840, 2160), Image.BILINEAR)
-img = np.asarray(img)
-img_R = np.double(img[:,:,0])
-img_G = np.double(img[:,:,1])
-img_B = np.double(img[:,:,2])
-w_img = 3840
-h_img = 2160
 
-# terms for anti aliasing
-Wr = pp * w                 # Receiver plane width
-
+# zero padding
 @njit
 def zeropadding(wvl):
     ps = wvl / (w_img * pp)  # source plane sampling rate
     return int(Wr / ps + 1)
-
-# resize image
-def resizing(img, ratio):
-    w2, h2 = new_w(ratio)
-    print(w2, ',', h2)
-    img_new = np.zeros((h_img, w_img))
-    im = Image.fromarray(img)
-    im = im.resize((w2, h2), Image.BILINEAR)  # resize image
-    im = np.asarray(im)
-    print(im.shape)
-    img_new[(h_img - h2)//2: (h_img + h2)//2 , (w_img - w2)//2 : (w_img + w2)//2] = im
-    return img_new
+nzp = w         # w 만큼 zero padidng 시켜보자
 
 
 @njit(nogil=True, cache=True)
@@ -64,7 +38,7 @@ def k(wvl):
     return (np.pi * 2) / wvl
 
 
-#@njit(nogil=True, cache=True)
+@njit(nogil=True, cache=True)
 def h_frsn(pixel_pitch_x, pixel_pitch_y, nx, ny, wvl):
     re = np.zeros((ny, nx))
     im = np.zeros((ny, nx))
@@ -76,50 +50,65 @@ def h_frsn(pixel_pitch_x, pixel_pitch_y, nx, ny, wvl):
             im[j, i] = np.sin((np.pi / wvl) * (x * x + y * y))
     return re + 1j * im
 
-@njit
-def Cal(wvl):
-    """red = 0, green = 1, blue = 2"""
-    wavelength = wvls[wvl]
-    image = np.double(img[:, :, wvl])
-    image = resizing(image, wvls[2] / wvls[wvl])  # 크롭
-    Nzp = zeropadding(wavelength)  # 제로패딩
-    ps = wvl / (w_img * pp)  # source plane sampling rate
-    ch = np.zeros((Nzp + h, Nzp + w))
-    return ps
-    
-    
-def main():
-  nzp = zeropadding(wvl_R)
-  wr = nzp + w
-  hr = nzp + h
-  ch = np.zeros((hr, wr))  # resize
-  ch[(hr - h)//2: (hr + h)//2 , (wr - w)//2 : (wr + w)//2] = resizing(img_R, wvls[2] / wvls[0])
-  pss = wvl_R / (wr * pp)
-  psy = wvl_R / (hr * pp)
-  ch2 = ch * h_frsn(pss, psy, wr, hr, wvl_R)
-  CH = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(ch2)))  # fft
-  result = np.zeros((h, w), dtype='complex128')
-  result = CH[(hr - h)//2: (hr + h)//2 , (wr - w)//2 : (wr + w)//2]
-  result = result * h_frsn(pp, pp, w, h, wvl_R)
 
-  Angle = np.angle(result)
-
-  plt.imshow(Angle)
-  ch_real = np.zeros((h, w, 3))
-  def normalize(arr):
-      arrin = arr - np.min(arr)
-      arrin = arrin / np.max(arrin)
-      return arrin
-  ch_real[:, :, 0] = normalize(Angle)
-  ch_real[:, :, 1] = normalize(Angel2)  # GREEN
-  ch_real[:, :, 2] = normalize(Angel3)  # BLUE
-
-  plt.imsave('200827Chiamge_aperture3.bmp', ch_real)
-
-  
-  
-if __name__ == '__main__':
-    main()
+@njit(nogil=True)
+def Refwave(wvl, r, thetax, thetay):
+    a = np.zeros((h, w))
+    b = np.zeros((h, w))
+    for i in range(h):
+        for j in range(w):
+            x = (j - w / 2) * pp
+            y = -(i - h / 2) * pp
+            a[i, j] = np.cos(-k(wvl) * (x * np.sin(thetax) + y * np.sin(thetay)))
+            b[i, j] = np.sin(-k(wvl) * (x * np.sin(thetax) + y * np.sin(thetay)))
+    return a / r - 1j * (b / r)
 
 
-  
+class Frsn(Encoding):
+    def __init__(self, imgpath, f=1, angleX=0, angleY=0):
+        self.zz = f
+        self.imagein = np.asarray(Image.open(imgpath))
+        self.num_cpu = 16 #multiprocessing.cpu_count()  # number of CPU
+        self.thetaX = angleX * (np.pi / 180)
+        self.thetaY = angleY * (np.pi / 180)
+        self.img_R = self.resizeimg(wvl_R, self.imagein[:, :, 0])
+        self.img_G = self.resizeimg(wvl_G, self.imagein[:, :, 1])
+        self.img_B = np.double(self.imagein[:, :, 2])
+
+    def resizeimg(self, wvl, img):
+        w_new = int((wvl_B / wvl) * w + 1)
+        h_new = int((wvl_B / wvl) * h + 1)
+        img_new = np.zeros((h_img, w_img))
+        im = Image.fromarray(img)
+        im = im.resize((w2, h2), Image.BILINEAR)  # resize image
+        im = np.asarray(im)
+        print(im.shape)
+        img_new[(h_img - h2)//2: (h_img + h2)//2 , (w_img - w2)//2 : (w_img + w2)//2] = im
+        return img_new
+
+    def Cal(self, wvl):
+        if color == 'green':
+            wvl = wvl_G
+            image = self.img_G
+        elif color == 'blue':
+            wvl = wvl_B
+            image = self.img_B
+        else:
+            wvl = wvl_R
+            image = self.img_R
+        # resize image
+        h_r = nzp + h_new   # reciever size
+        w_r = nzp + w_new
+        ch = np.zeros((h_r, w_r))
+        im = Image.fromarray(image)
+        im = im.resize((w_new, h_new), Image.BILINEAR)
+        im = np.asarray(im)
+        ch[nzp//2:nzp//2+h_new,nzp//2:nzp//2+w_new] = im
+        psx = wvl / ((w_r) * pp)
+        psy = wvl / ((h_r) * pp)
+        ch2 = ch * h_frsn(psx, psy, w_r, h_r, wvl)
+        CH1 = self.fft(ch2)
+        result = CH1[(h_r - h)//2: (h_r + h)//2 , (w_r - w)//2 : (w_r + w)//2]
+        result *= h_frsn(pp, pp, w, h, wvl)
+        return result
+        
