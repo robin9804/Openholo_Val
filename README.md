@@ -1,5 +1,5 @@
 # Openholo_Val
-Openholo library varification project
+Openholo library validation project
 
 ### 사용 라이브러리
 numpy, matplotlib, numba, plyfile, Pillow
