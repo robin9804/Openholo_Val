@@ -1,6 +1,9 @@
 # Openholo_Val
 Openholo library varification project
 
+# 사용 라이브러리
+numpy, matplotlib, numba, plyfile, Pillow
+
 ### Point Cloud 기반 CGH 생성
 1. RS integral
 
