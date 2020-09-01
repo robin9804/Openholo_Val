@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numba import njit
 from PIL import Image
+from depthmap.encoding import Encoding
 
-from Encode import Encoding
 
 # parameters
 mm = 1e-3
@@ -67,9 +67,9 @@ def refwave(wvl, wr, hr, thetaX, thetaY):
         for j in range(wr):
             x = (j - wr / 2) * pp
             y = -(i - hr / 2) * pp
-            a[i, j] = np.cos(-k(wvl) * (x * np.sin(thetax) + y * np.sin(thetay)))
-	    b[i, j] = np.sin(-k(wvl) * (x * np.sin(thetax) + y * np.sin(thetay)))
-    return a / r - 1j * (b / r)
+            a[i, j] = np.cos(-k(wvl) * (x * np.sin(thetaX) + y * np.sin(thetaY)))
+            b[i, j] = np.sin(-k(wvl) * (x * np.sin(thetaX) + y * np.sin(thetaY)))
+    return a - 1j * b
 
 
 class AngularSpectrumMethods(Encoding):
@@ -77,47 +77,46 @@ class AngularSpectrumMethods(Encoding):
         self.zz = f
         self.thetaX = angleX * (np.pi * 180)
         self.thetaY = angleY * (np.pi * 180)
-	self.imgin = np.asarray(Image.open(imgpath))
-	self.img_R = self.resizeimg(wvl_R, self.imagein[:, :, 0])
-	self.img_G = self.resizeimg(wvl_G, self.imagein[:, :, 1])
-	self.img_B = np.double(self.imagein[:, :, 2])
+        self.imgin = np.asarray(Image.open(imgpath))
+        self.img_R = self.resizeimg(wvl_R, self.imgin[:, :, 0])
+        self.img_G = self.resizeimg(wvl_G, self.imgin[:, :, 1])
+        self.img_B = np.double(self.imgin[:, :, 2])
 
     def resizeimg(self, wvl, img):
-	w_new = int((wvl_B / wvl) * w + 1)
-	h_new = int((wvl_B / wvl) * h + 1)
-	img_new = np.zeros((h_img, w_img))
-	im = Image.fromarray(img)
-	im = im.resize((w2, h2), Image.BILINEAR)  # resize image
-	im = np.asarray(im)
-	print(im.shape)
-	img_new[(h_img - h2) // 2:(h_img + h2) // 2, (w_img - w2) // 2:(w_img + w2) // 2] = im
-	return img_new
+        w_n = int((wvl_B / wvl) * w_i + 1)
+        h_n = int((wvl_B / wvl) * h_i + 1)
+        img_new = np.zeros((h_i, w_i))
+        im = Image.fromarray(img)
+        im = im.resize((w_n, h_n), Image.BILINEAR)  # resize image
+        im = np.asarray(im)
+        print(im.shape)
+        img_new[(h_i - h_n) // 2:(h_i + h_n) // 2, (w_i - w_n) // 2:(w_i + w_n) // 2] = im
+        return img_new
 
-    def Cal(self, wvl):
+    def cal(self, color='red'):
         if color == 'green':
             wvl = wvl_G
-	    image = self.img_G
-	elif color == 'blue':
-	    wvl = wvl_B
-	    image = self.img_B
-	else:
-	    wvl = wvl_R
-	    image = self.img_R
-	# resize image
-	h_r = nzp + h_new  # reciever size and zero padding
-	w_r = nzp + w_new
-	ch = np.zeros((h_r, w_r))
-	im = Image.fromarray(image)
-	im = im.resize((w_new, h_new), Image.BILINEAR)
-	im = np.asarray(im)
-	ch[nzp // 2:nzp // 2 + h_new, nzp // 2:nzp // 2 + w_new] = im
-	# ASM part
-	CH = self.fft(ch)
-	A = asm_kernel(wvl, self.zz, nzp)
-	CH *= A
-	HO = self.ifft(CH)
-	# Reference wave
-	HO += refwave(wvl, w_r, h_r, self.thetaX, self.thetaY) * 4  # amp
-	result = np.zeros((h, w), dtype='complex128')
-	result = HO[(h_r - h) // 2:(h_r + h) // 2, (w_r - w) // 2:(w_r + w) //2]  # crop
-	return result
+            image = self.img_G
+        elif color == 'blue':
+            wvl = wvl_B
+            image = self.img_B
+        else:
+            wvl = wvl_R
+            image = self.img_R
+        # resize image
+        h_r = nzp + h_new  # receiver size and zero padding
+        w_r = nzp + w_new
+        ch = np.zeros((h_r, w_r))
+        im = Image.fromarray(image)
+        im = im.resize((w_new, h_new), Image.BILINEAR)
+        im = np.asarray(im)
+        ch[nzp // 2:nzp // 2 + h_new, nzp // 2:nzp // 2 + w_new] = im
+        # ASM part
+        CH = self.fft(ch)
+        A = asm_kernel(wvl, self.zz, nzp)
+        CH *= A
+        HO = self.ifft(CH)
+        # Reference wave
+        HO += refwave(wvl, w_r, h_r, self.thetaX, self.thetaY) * 4  # amp
+        result = HO[(h_r - h) // 2:(h_r + h) // 2, (w_r - w) // 2:(w_r + w) //2]  # crop
+        return result
