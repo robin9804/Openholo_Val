@@ -58,7 +58,6 @@ def h_frsn(pixel):
 
 class FrsnFFT(Encoding):
     """fresnel FFT propagation"""
-
     def __init__(self, plypath, f=1, angleX=0, angleY=0):
         self.z = f  # Propagation distance
         self.thetaX = angleX * (np.pi / 180)
