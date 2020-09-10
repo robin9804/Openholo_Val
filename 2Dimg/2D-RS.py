@@ -69,6 +69,32 @@ def point_conv(n, image, z, wvl):
     return ch_r + 1j * ch_i
 
 
+@njit
+def noclassCal(img, wvl, z=1):
+    CH_R = np.zeros((h,w))
+    CH_I = np.zeros((h,w))
+    for i in range(ss):
+        x_s = int(n % w_s)
+        y_s = int(n // w_s)
+        if img[y_s, x_s] == 0:
+            continue
+        amp = image[y_s, x_s]
+        ch_r = np.zeros((h, w))
+        ch_i = np.zeros((h, w))
+        x1 = (x_s - w_s / 2) * ps  # source plane 좌표
+        y1 = -(y_s - h_s / 2) * ps
+        for j in range(h):
+            for k in range(w):
+                x2 = (k - w/2) * pp
+                y2 = -(j - h/2) * pp
+                ch_r[j, k], ch_i[j, k] = h_RS(x1, y1, 0, x2, y2, z, wvl)
+        ch_r = ch_r * amp
+        ch_i = ch_i * amp
+        CH_R += ch_r
+        CH_I += ch_i
+    return CH_R + 1j * CH_I
+
+
 class RS(Encoding):
     def __init__(self, imgpath, f=1):
         self.z = f  # Propagation distance
