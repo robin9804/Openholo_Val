@@ -65,7 +65,7 @@ def pointConv(x1, y1, z1, z2, amp, wvl):
 
 
 @njit(nogil=True)
-def FullConv(image, z, wvl):
+def FullConv(image, z, wvl, angleY=0):
     ch_r = np.zeros((h, w))
     ch_i = np.zeros((h, w))
     for p in range(h_s):
@@ -73,7 +73,7 @@ def FullConv(image, z, wvl):
             if image[p, q] == 0:
                 continue
             x1 = (p - w / 2) * ps
-            y1 = -(q - h / 2) * ps
+            y1 = -(q - h / 2 + angleY) * ps
             amp = image[p, q]
             u_re, u_im = pointConv(x1, y1, 0, z, amp, wvl)
             print(p,', ', q, " th point done")
