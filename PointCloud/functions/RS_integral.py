@@ -33,13 +33,12 @@ def h_RS(x1, y1, z1, x2, y2, z2, wvl):
     """Impulse Response of R-S propagation"""
     z = (z1 - z2) * (wvl / wvl_B)   # 2번 거리 z 보정
     r = np.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + z * z)
-    t = (wvl * r) / (2 * pp)  # anti alliasing condition, 삭제
+    t = (wvl * r) / (2 * pp)  # anti alliasing condition
     if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):
         h_r = np.sin(k(wvl) * r)
         h_i = np.cos(k(wvl) * r)
     else:
         h_r = 0
-
         h_i = 0
     return h_r / (r * r), h_i / (r * r)
 
