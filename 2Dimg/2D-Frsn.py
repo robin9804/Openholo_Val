@@ -1,6 +1,5 @@
-# input image
 import numpy as np
-from numba import njit, prange, jit
+from numba import njit
 import matplotlib.pyplot as plt
 from PIL import Image
 
@@ -13,8 +12,6 @@ wvl_G = 525 * nm  # Green
 wvl_B = 463 * nm  # Blue
 
 # SLM parameters
-w_s = 1920  # source width
-h_s = 1080  # height
 w = 3840  # SLM width
 h = 2160
 pp = 3.6 * um  # SLM pixel pitch
@@ -22,10 +19,14 @@ scaleXY = 0.03
 scaleZ = 0.25
 ps = scaleXY / w_s
 
+# read iamge
 img = np.asarray(Image.open('aperture2.bmp'))
 img_R = np.double(img[:,:,0])
 img_G = np.double(img[:,:,1])
 img_B = np.double(img[:,:,2])
+
+w_s = img.shape[1]  # source width
+h_s = img.shape[0]  # height
 
 
 @njit(nogil=True, cache=True)
@@ -61,38 +62,6 @@ def pointConv(x1, y1, z1, z2, amp, wvl):
             ch_i[i, j] = im
     # print('point done')
     return ch_r * amp,  ch_i * amp
-
-
-ss = h_s * w_s  # source size
-slm_s = h*w     # SLM size
-
-
-@njit(nogil=True)
-def Conv(image, z, wvl):
-    ch_r = np.zeros((h, w))
-    ch_i = np.zeros((h, w))
-    for i in range(int(ss)):
-        x_s = int(i % w_s)
-        y_s = int(i // w_s)
-        if image[y_s, x_s] == 0:
-            continue
-        amp = image[y_s, x_s]
-        x1 = (x_s - w_s/2) * ps  # source plane 좌표
-        y1 = -(y_s - h_s/2) * ps
-        im = np.zeros((h,w))
-        re = np.zeros((h,w))
-        for j in range(int(slm_s)):
-            x_r = j % w
-            y_r = j // w
-            x2 = (x_r - w/2) * pp
-            y2 = (y_r - h/2) * pp
-            real, imag = h_Fresnel(x1, y1, x2, y2, z, wvl)
-            re[y_r, x_r] = real * amp
-            im[y_r, x_r] = imag * amp
-        ch_r += re
-        ch_i += im
-        print(x_s, ', ',y_s, 'point done')
-    return ch_r + 1j * ch_i
 
 
 @njit(nogil=True)
