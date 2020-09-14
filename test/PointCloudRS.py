@@ -1,13 +1,15 @@
 import numpy as np
 import plyfile
-from numba import njit, prange
+from numba import njit
 from concurrent.futures import ProcessPoolExecutor
+from functions.encoding import Encoding
 import multiprocessing
+
 
 # parameters
 mm = 1e-3
-um = mm*mm
-nm = um*mm
+um = mm * mm
+nm = um * mm
 wvl_R = 639 * nm  # Red
 wvl_G = 525 * nm  # Green
 wvl_B = 463 * nm  # Blue
@@ -19,41 +21,45 @@ pp = 3.6 * um  # SLM pixel pitch
 scaleXY = 0.03
 scaleZ = 0.25
 
-# inline functions 이런 함수를 다른 파일로 빼버리면 됨.
+
+# inline functions
 @njit(nogil=True, cache=True)
 def k(wvl):
     return (np.pi * 2) / wvl
 
-@njit(nogil=True)
-def h_RS(x1, y1, z1, x2, y2, z2, wvl, thetaX, thetaY):
-    """Impulse Response of R-S propagation"""
-    r = np.sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2) + (z1-z2)*(z1-z2))
-    t = (wvl * r) / (2 * pp)  # anti alliasing conditio 
-    if (x1 - t < x2 < x1 + t) and (y1-t < y2 < y1 + t):
-        h_r = np.sin(k(wvl) * (r + x2*np.sin(thetaX) + y2*np.sin(thetaY)))
-        h_i = np.cos(k(wvl) * (r + x2*np.sin(thetaX) + y2*np.sin(thetaY)))
-    else:
-        h_r = 0 
-        h_i = 0
-    return h_r / (r*r), h_i / (r*r)
 
 @njit(nogil=True)
-def Conv(x1, y1, z1, z2, amp, wvl, thetaX, thetaY):
+def h_RS(x1, y1, z1, x2, y2, z2, wvl):
+    """Impulse Response of R-S propagation"""
+    z = (z1 - z2)
+    r = np.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + z * z)
+    t = (wvl * r) / (2 * pp)  # anti alliasing condition
+    if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):
+        h_r = np.sin(k(wvl) * r)
+        h_i = np.cos(k(wvl) * r)
+    else:
+        h_r = 0
+
+        h_i = 0
+    return h_r / (r * r), h_i / (r * r)
+
+@njit(nogil=True)
+def Conv(x1, y1, z1, z2, amp, wvl):
     ch_r = np.zeros((h, w))
     ch_i = np.zeros((h, w))
     for i in range(h):
         for j in range(w):
             x2 = (j - w / 2) * pp
             y2 = -(i - h / 2) * pp
-            re, im = h_RS(x1, y1, z1, x2, y2, z2, wvl, thetaX, thetaY)
+            re, im = h_RS(x1, y1, z1, x2, y2, z2, wvl)
             ch_r[i, j] = re
             ch_i[i, j] = im
     # print('point done')
-    return (ch_r + 1j*ch_i) * amp
+    return (ch_r + 1j * ch_i) * amp
 
-# 일단 하나씩 잘되는지 확인해야 한다.
 
-class RS:    
+
+class RS(Encoding):
     def __init__(self, plypath, f=1, angleX=0, angleY=0):
         self.z = f  # Propagation distance
         self.thetaX = angleX * (np.pi / 180)
@@ -64,6 +70,12 @@ class RS:
         self.num_cpu = multiprocessing.cpu_count()  # number of CPU
         self.num_point = [i for i in range(len(self.plydata))]
 
+    def scale(self, wvl):
+        if self.thetaX != 0 or self.thetaY != 0:
+            return scaleXY * (wvl_B / wvl)
+        else:
+            return scaleXY
+
     def Cal(self, n, color='red'):
         """Convolution"""
         ch = np.zeros((h, w), dtype='complex128')
@@ -73,23 +85,23 @@ class RS:
             wvl = wvl_B
         else:
             wvl = wvl_R
-        x0 = self.plydata['x'][n] * scaleXY
-        y0 = self.plydata['y'][n] * scaleXY
+        x0 = (self.plydata['x'][n] + self.z * self.thetaX) * self.scale
+        y0 = (self.plydata['y'][n] + self.z * self.thetaY) * self.scale
         z0 = self.plydata['z'][n] * scaleZ
         amp = self.plydata[color][n] * (self.z / wvl)
-        ch = Conv(x0, y0, z0, self.z, amp, wvl, self.thetaX, self.thetaY)
+        ch = Conv(x0, y0, z0, self.z, amp, wvl)
         print(n, ' th point ', color, ' Done')
         return ch
-        
-    def Conv_R(self,n):
+
+    def Conv_R(self, n):
         return self.Cal(n, 'red')
 
-    def Conv_G(self,n):
+    def Conv_G(self, n):
         return self.Cal(n, 'green')
 
-    def Conv_B(self,n):
+    def Conv_B(self, n):
         return self.Cal(n, 'blue')
-    
+
     def CalHolo(self, color='red'):
         """Calculate hologram"""
         if color == 'green':
@@ -100,15 +112,14 @@ class RS:
             func = self.Conv_R
         print(self.num_cpu, " core Ready")
         ch = np.zeros((h, w), dtype='complex128')
-        count = np.split(self.num_point, [i*self.num_cpu for i in range(1, len(self.plydata) // self.num_cpu)])
+        count = np.split(self.num_point, [i * self.num_cpu for i in range(1, len(self.plydata) // self.num_cpu)])
         print(count)
         for n in count:
-            with ProcessPoolExecutor(2) as ex:
+            with ProcessPoolExecutor(self.num_cpu) as ex:
                 cache = [result for result in ex.map(func, list(n))]
                 cache = np.asarray(cache)
                 print(n, 'steps done')
                 for j in range(len(n)):
                     ch += cache[j, :, :]
         return ch
-        
-    
+
