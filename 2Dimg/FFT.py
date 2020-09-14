@@ -30,7 +30,6 @@ def limits(u, z, wvl):
     # u is delta u
     return (1/wvl) * np.sqrt((2 * u * z)**2 + 1)
 
-
 @njit
 def asm_kernel(wvl, z):
     deltax = 1 / (w * pp * 4)     # sampling period
@@ -43,7 +42,7 @@ def asm_kernel(wvl, z):
             fy = ((j - h) * deltay)
             delx = limits(fx, z, wvl)
             dely = limits(fy, z, wvl)
-            if -delx < fx < delx and -dely < fy < dely:
+            if -delx < fx < delx and -dely < fy < dely: # band limiting
                 #(fx * fx + fy * fy) < (1 / (wvl * wvl)):
                 a[j, i] = np.cos(2 * np.pi * z * np.sqrt((1/wvl)**2 - fx * fx - fy * fy))
                 b[j, i] = np.sin(2 * np.pi * z * np.sqrt((1/wvl)**2 - fx * fx - fy * fy))
@@ -73,6 +72,10 @@ class FFT(Encoding):
         self.img_R = np.double(self.resizeimg(wvl_R, self.imagein[:, :, 0])) / 255
         self.img_G = np.double(self.resizeimg(wvl_G, self.imagein[:, :, 1])) / 255
         self.img_B = np.double(self.resizeimg(wvl_B, self.imagein[:, :, 2])) / 255
+        # asm 용
+        self.img_r = np.double(self.resizeimg(wvl_B, self.imagein[:, :, 0])) / 255
+        self.img_g = np.double(self.resizeimg(wvl_B, self.imagein[:, :, 1])) / 255
+        self.img_b = np.double(self.resizeimg(wvl_B, self.imagein[:, :, 2])) / 255
 
     def resizeimg(self, wvl, img):
         """RGB 파장에 맞게 원본 이미지를 리사이징 + zero padding"""
@@ -111,13 +114,13 @@ class FFT(Encoding):
     def ASM(self, color):
         if color == 'green':
             wvl = wvl_G
-            image = self.img_G
+            image = self.img_g
         elif color == 'blue':
             wvl = wvl_B
-            image = self.img_B
+            image = self.img_b
         else:
             wvl = wvl_R
-            image = self.img_R
+            image = self.img_r
         CH = self.fft(image)
         CH = CH * asm_kernel(wvl, self.zz)
         result = self.ifft(CH)
