@@ -85,8 +85,8 @@ class RS(Encoding):
             wvl = wvl_B
         else:
             wvl = wvl_R
-        x0 = (self.plydata['x'][n] + self.z * self.thetaX) * self.scale
-        y0 = (self.plydata['y'][n] + self.z * self.thetaY) * self.scale
+        x0 = (self.plydata['x'][n] + np.tan(self.z * self.thetaX)) * self.scale(wvl)
+        y0 = (self.plydata['y'][n] + np.tan(self.z * self.thetaY)) * self.scale(wvl)
         z0 = self.plydata['z'][n] * scaleZ
         amp = self.plydata[color][n] * (self.z / wvl)
         ch = Conv(x0, y0, z0, self.z, amp, wvl)
