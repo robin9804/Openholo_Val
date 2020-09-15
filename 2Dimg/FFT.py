@@ -133,7 +133,6 @@ class FFT:
         result = self.ifft(CH)
         result = result[h // 2: (3 * h) // 2, w // 2: (3 * w) // 2]
         phase = np.random.random((h,w)) * 2 * np.pi  # random phase
-        result += np.exp(1j * phase)
         return result
 
 
