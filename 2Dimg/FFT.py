@@ -101,8 +101,6 @@ class FFT:
         # resize image
         zzz = 1 * self.zz
         ps = scaleX / (2*w)
-        #psx = (wvl * self.zz) / (w * 10 * pp)
-        #psy = (wvl * self.zz) / (10 * h * pp)
         phase = np.random.random((2*h, 2*w)) * 2 * np.pi  # random phas
         ph = np.exp(1j*phase)
         ph *= image
@@ -110,8 +108,6 @@ class FFT:
         CH1 = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(self.ch2)))
         result = CH1 * h_frsn(pp, pp, w+w, h+h, zzz, wvl)
         result = result[h // 2: (3*h) // 2, w // 2: (3*w) // 2]
-        #phase = np.random.random((h, w)) * 2 * np.pi  # random phase
-        #result += np.exp(1j * phase)
         #result *= Refwave(wvl, zzz, self.thetaX, self.thetaY)
         return result
 
