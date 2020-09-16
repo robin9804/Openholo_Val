@@ -34,12 +34,12 @@ def limits(u, z, wvl):
 def asm_kernel(wvl, z):
     deltax = 1 / (w * pp * 4)     # sampling period
     deltay = 1 / (h * pp * 4)
-    a = np.zeros((h*2, w*2))        # real part
-    b = np.zeros((h*2, w*2))        # imaginary part
-    for i in range(w*2):
-        for j in range(h*2):
-            fx = ((i - w) * deltax)
-            fy = -((j - h) * deltay)
+    a = np.zeros((h*3, w*3))        # real part
+    b = np.zeros((h*3, w*3))        # imaginary part
+    for i in range(w*3):
+        for j in range(h*3):
+            fx = ((i - w*(3/2)) * deltax)
+            fy = -((j - h*(3/2)) * deltay)
             delx = limits(fx, z, wvl)
             dely = limits(fy, z, wvl)
             if -delx < fx < delx and -dely < fy < dely:
@@ -72,9 +72,19 @@ class FFT:
         self.img_R = np.double(self.resizeimg(wvl_R, self.imagein[:, :, 0]))
         self.img_G = np.double(self.resizeimg(wvl_G, self.imagein[:, :, 1]))
         self.img_B = np.double(self.resizeimg(wvl_B, self.imagein[:, :, 2]))
-        self.img_r = np.double(self.resizeimg(wvl_B, self.imagein[:, :, 0]))
-        self.img_g = np.double(self.resizeimg(wvl_B, self.imagein[:, :, 1]))
-        self.img_b = np.double(self.resizeimg(wvl_B, self.imagein[:, :, 2]))
+        self.img_r = np.double(self.zeropadding(self.imagein[:,:,0]))
+        self.img_g = np.double(self.zeropadding(self.imagein[:,:,1]))
+        self.img_b = np.double(self.zeropadding(self.imagein[:,:,2]))
+
+    def zeropadding(self, img, nzpw=2*w,nzph=2*h ):
+        im = Image.fromarray(img)
+        im = im.resize((w, h), Image.BILINEAR)
+        im = np.asarray(im)
+        hh = nzph + h
+        ww = nzpw + w
+        img_new = np.zeros((hh, ww))
+        img_new[(hh-h)//2:(hh+h)//2, (ww-w)//2:(ww+w)//2] = im
+        return img_new
 
     def resizeimg(self, wvl, img):
         """RGB 파장에 맞게 원본 이미지를 리사이징 + zero padding"""
@@ -101,6 +111,8 @@ class FFT:
         # resize image
         zzz = 1 * self.zz
         ps = scaleX / (2*w)
+        #psx = (wvl * self.zz) / (w * 10 * pp)
+        #psy = (wvl * self.zz) / (10 * h * pp)
         phase = np.random.random((2*h, 2*w)) * 2 * np.pi  # random phas
         ph = np.exp(1j*phase)
         ph *= image
@@ -108,6 +120,8 @@ class FFT:
         CH1 = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(self.ch2)))
         result = CH1 * h_frsn(pp, pp, w+w, h+h, zzz, wvl)
         result = result[h // 2: (3*h) // 2, w // 2: (3*w) // 2]
+        #phase = np.random.random((h, w)) * 2 * np.pi  # random phase
+        #result += np.exp(1j * phase)
         #result *= Refwave(wvl, zzz, self.thetaX, self.thetaY)
         return result
 
@@ -117,18 +131,17 @@ class FFT:
             image = self.img_g
         elif color == 'blue':
             wvl = wvl_B
-            image = self.img_B
+            image = self.img_b
         else:
             wvl = wvl_R
             image = self.img_r
-        phase = np.random.random((2 * h, 2 * w)) * 2 * np.pi  # random phas
+        phase = np.random.random((3 * h, 3 * w)) * 2 * np.pi  # random phas
         ph = np.exp(1j * phase)
         ph *= image
         CH = self.fft(ph)
         CH = CH * asm_kernel(wvl, self.zz)
         result = self.ifft(CH)
-        result = result[h // 2: (3 * h) // 2, w // 2: (3 * w) // 2]
-        phase = np.random.random((h,w)) * 2 * np.pi  # random phase
+        result = result[h: (2 * h), w: (2 * w)]
         return result
 
 
@@ -188,7 +201,10 @@ class FFT:
         return im, re
 
 
+
+
+
 if __name__ == '__main__':
     fs = FFT('dice_rgb.bmp')
-    fs.getRGBImage(fs.Cal('red'), fs.Cal('green'), fs.Cal('blue'), '200915 2D FrsnFFT onaxis new1.bmp', type='angle')
-    fs.getRGBImage(fs.ASM('red'), fs.ASM('green'), fs.ASM('blue'), '200915 2D ASMFFT onaxis new1.bmp', type='angle')
+    #fs.getRGBImage(fs.Cal('red'), fs.Cal('green'), fs.Cal('blue'), '200915 2D FrsnFFT onaxis new1.bmp', type='angle')
+    fs.getRGBImage(fs.ASM('red'), fs.ASM('green'), fs.ASM('blue'), '200915 2D ASMFFT onaxis new4.bmp', type='angle')
