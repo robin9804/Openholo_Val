@@ -100,6 +100,7 @@ class Depthmap:
             # image = self.img_R
         # resize image
         imgs = image * amap
+        imgs = np.flip(imgs, axis=0)
         zzz = UD * n + self.zz
         phase = np.random.random((2 * h, 2 * w)) * 2 * np.pi  # random phas
         ph = np.exp(1j * phase)
