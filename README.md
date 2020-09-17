@@ -29,3 +29,4 @@ numpy, matplotlib, numba, plyfile, Pillow
 
 
 ## Depthmap 기반 CGH 생성
+Single FFT Fresnel propagation
