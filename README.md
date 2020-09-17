@@ -20,9 +20,12 @@ numpy, matplotlib, numba, plyfile, Pillow
 2. Fresnel integral
 
 3. Fresnel FFT
-(작업중)
+
 
 ## Encoding 및 기타 함수
 1. Encoding
 
 2. Normalize
+
+
+## Depthmap 기반 CGH 생성
