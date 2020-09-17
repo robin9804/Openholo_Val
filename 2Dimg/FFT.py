@@ -36,12 +36,12 @@ def asm_kernel(wvl, z):
     deltay = 1 / (h * pp * 4)
     a = np.zeros((h*3, w*3))        # real part
     b = np.zeros((h*3, w*3))        # imaginary part
+    delx = limits(deltax, z, wvl)
+    dely = limits(deltay, z, wvl)
     for i in range(w*3):
         for j in range(h*3):
             fx = ((i - w*(3/2)) * deltax)
             fy = -((j - h*(3/2)) * deltay)
-            delx = limits(fx, z, wvl)
-            dely = limits(fy, z, wvl)
             if -delx < fx < delx and -dely < fy < dely:
                 #(fx * fx + fy * fy) < (1 / (wvl * wvl)):
                 a[j, i] = np.cos(2 * np.pi * z * np.sqrt((1/wvl)**2 - fx * fx - fy * fy))
