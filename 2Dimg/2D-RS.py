@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-from depthmap.encoding import Encoding
 from concurrent.futures import ProcessPoolExecutor
 from numba import njit
 
@@ -14,15 +13,15 @@ wvl_G = 525 * nm  # Green
 wvl_B = 463 * nm  # Blue
 
 # SLM parameters
-w = 3840            # width
-h = 2160            # height
-pp = 3.6 * um       # SLM pixel pitch
+w = 1024#3840            # width
+h = 1024#2160            # height
+pp = 3.6 * 2 * um       # SLM pixel pitch
 scaleXY = 0.03
 scaleZ = 0.25
 
 # source parameters
-w_s = 1920              # source width
-h_s = 1080              # height
+w_s = 1024              # source width
+h_s = 1024              # height
 ss = int(h_s * w_s)     # source size
 ps = scaleXY / w_s      # source plane pixel pitch
 
@@ -35,7 +34,7 @@ def k(wvl):
 @njit(nogil=True)
 def h_RS(x1, y1, z1, x2, y2, z2, wvl):
     """Impulse Response of R-S propagation"""
-    zz = (z2 - z1) * (wvl / wvl_B)  # point cloud 거리 좌표 보정
+    zz = (z2 - z1) # * (wvl / wvl_B)  # point cloud 거리 좌표 보정
     r = np.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + zz * zz)
     t = (wvl * r) / (2 * pp)  # anti aliasing condition
     if (x1 - t < x2 < x1 + t) and (y1 - t < y2 < y1 + t):
@@ -69,40 +68,14 @@ def point_conv(n, image, z, wvl):
     return ch_r + 1j * ch_i
 
 
-@njit
-def noclassCal(img, wvl, z=1):
-    CH_R = np.zeros((h,w))
-    CH_I = np.zeros((h,w))
-    for i in range(ss):
-        x_s = int(n % w_s)
-        y_s = int(n // w_s)
-        if img[y_s, x_s] == 0:
-            continue
-        amp = image[y_s, x_s]
-        ch_r = np.zeros((h, w))
-        ch_i = np.zeros((h, w))
-        x1 = (x_s - w_s / 2) * ps  # source plane 좌표
-        y1 = -(y_s - h_s / 2) * ps
-        for j in range(h):
-            for k in range(w):
-                x2 = (k - w/2) * pp
-                y2 = -(j - h/2) * pp
-                ch_r[j, k], ch_i[j, k] = h_RS(x1, y1, 0, x2, y2, z, wvl)
-        ch_r = ch_r * amp
-        ch_i = ch_i * amp
-        CH_R += ch_r
-        CH_I += ch_i
-    return CH_R + 1j * CH_I
-
-
-class RS(Encoding):
+class RS:
     def __init__(self, imgpath, f=1):
         self.z = f  # Propagation distance
         self.imagein = np.asarray(Image.open(imgpath))
         self.num_cpu = 16 #multiprocessing.cpu_count()  # number of CPU
-        self.img_R = np.double(self.imagein[:, :, 0])
-        self.img_G = np.double(self.imagein[:, :, 1])
-        self.img_B = np.double(self.imagein[:, :, 2])
+        self.img_R = np.double(self.imagein[:, :])
+        self.img_G = np.double(self.imagein[:, :])
+        self.img_B = np.double(self.imagein[:, :])
         self.num_point = []  # [i for i in range(ss)]     # number of point
         for i in range(ss):
             x_s = int(i % w_s)
@@ -158,3 +131,44 @@ class RS(Encoding):
                 for j in range(len(n)):
                     ch += cache[j, :, :]
         return ch
+
+    def normalize(self, arr, type='angle'):
+        """normalize"""
+        if type == 'phase':
+            arrin = np.copy(np.imag(arr))
+        elif type == 'real':
+            arrin = np.copy(np.real(arr))
+        elif type == 'angle':
+            arrin = np.copy(np.angle(arr))
+            arrin = (arrin + np.pi) / (2 * np.pi)
+            return arrin
+        elif type == 'amplitude':
+            arrin = np.copy(np.abs(arr))
+        else:
+            arrin = np.copy(arr)
+        # arrin = np.float(arrin)
+        arrin -= np.min(arrin)
+        # arrin = arrin + np.abs(arrin)
+        arrin = arrin / np.max(arrin)
+        return arrin
+
+    def getRGBImage(self, R, G, B, fname, type='phase'):
+        """Get RGB image"""
+        h, w = R.shape
+        img = np.zeros((h, w, 3))
+        img[:, :, 0] = self.normalize(R, type)
+        img[:, :, 1] = self.normalize(G, type)
+        img[:, :, 2] = self.normalize(B, type)
+        plt.imsave(fname, img)
+        return img
+
+    def getMonoImage(self, ch, fname):
+        """Get Single channel image"""
+        im = self.normalize(ch, 'phase')
+        phase = fname + '_IM.bmp'
+        plt.imsave(phase, im, cmap='gray')
+        re = self.normalize(ch, 'real')
+        real = fname + '_RE.bmp'
+        plt.imsave(real, re, cmap='gray')
+        return im, re
+
